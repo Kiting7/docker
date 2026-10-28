@@ -1,18 +1,29 @@
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
-
+import { readFileSync } from 'node:fs';
 const port = process.env.PORT || 3001;
 
-if (!process.env.DATABASE_URL) {
-  console.error('ERROR: DATABASE_URL is not defined');
-  console.error('Please create a .env file with DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME');
+let databaseConfig;
+
+if (process.env.DB_PASSWORD_FILE) {
+  databaseConfig = {
+    host: process.env.DB_HOST || 'db',
+    port: Number(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME || 'evaluation',
+    user: process.env.DB_USER || 'postgres',
+    password: readFileSync(process.env.DB_PASSWORD_FILE, 'utf8').trim(),
+  };
+} else if (process.env.DATABASE_URL) {
+  databaseConfig = {
+    connectionString: process.env.DATABASE_URL,
+  };
+} else {
+  console.error('Configure DB_PASSWORD_FILE ou DATABASE_URL');
   process.exit(1);
 }
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const pool = new pg.Pool(databaseConfig);
 
 const app = express();
 

@@ -1,0 +1,39 @@
+# Chargé automatiquement par docker compose up.
+# Mode développement.
+
+services:
+  backend:
+    build:
+      target: development
+    image: ${IMAGE_PREFIX:-docker-eval}-backend:dev
+
+    volumes:
+      - ./backend/src:/app/src:ro
+
+    # Aucun port publié :
+    # l'API reste accessible via http://localhost:5173/api/...
+
+  frontend:
+    build:
+      target: development
+    image: ${IMAGE_PREFIX:-docker-eval}-frontend:dev
+
+    environment:
+      API_PROXY_TARGET: http://backend:3001
+
+    ports: !override
+      - "127.0.0.1:${APP_PORT:-5173}:5173"
+
+    volumes:
+      - ./frontend/src:/app/src:ro
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-evaluation}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - back_net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+      target: development
+    environment:
+      PORT: "3001"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-evaluation}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    networks:
+      - front_net
+      - back_net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      API_PROXY_TARGET: http://backend:3001
+    ports:
+      - "127.0.0.1:${APP_PORT:-5173}:5173"
+    networks:
+      - front_net
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  front_net:
+  back_net:
+    internal: true
+
+volumes:
+  db_data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
