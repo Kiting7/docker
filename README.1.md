@@ -578,3 +578,170 @@ docker buildx inspect --bootstrap
 
 Relancer le build avec `--progress=plain` pour obtenir des logs détaillés.
 
+## Registry et stratégie de versioning
+
+### Registry utilisé
+
+Les images du backend et du frontend sont publiées sur GitHub Container Registry (GHCR) :
+
+- `ghcr.io/kiting7/docker-backend`
+- `ghcr.io/kiting7/docker-frontend`
+
+PostgreSQL utilise directement l’image publique officielle `postgres:18-alpine`.
+
+La publication sur GHCR permet de récupérer les images et de lancer l’application sans les reconstruire localement.
+
+### Stratégie de tags
+
+| Tag | Utilisation |
+|---|---|
+| `1.0.0` | Version précise de la livraison |
+| `1.0` | Dernière version de la série `1.0.x` |
+| `latest` | Dernière version stable |
+| `sha-<commit>` | Identification du commit source |
+
+Exemple : une correction de la version `1.0.0` produit une version `1.0.1`. Les tags `1.0` et `latest` sont alors mis à jour.
+
+Un tag de version précise n’est pas réutilisé pour un contenu différent. Les tags restent techniquement modifiables : le digest permet d’identifier une image de manière immuable.
+
+### Publier une nouvelle version
+
+Cette procédure est destinée au mainteneur du projet. Elle n’est pas nécessaire pour simplement démarrer l’application.
+
+#### 1. Se connecter à GHCR
+
+Créer un Personal Access Token GitHub classique avec la permission `write:packages`, puis exécuter :
+
+```powershell
+docker login ghcr.io -u Kiting7
+```
+
+Au champ `Password`, saisir le token GitHub, pas le mot de passe du compte.
+
+Ne jamais enregistrer ce token dans Git, dans le README ou dans le fichier `.env`.
+
+#### 2. Préparer le builder multi-architecture
+
+Si le builder n’existe pas encore :
+
+```powershell
+docker buildx create --name multiarch --driver docker-container --use
+docker buildx inspect --bootstrap
+```
+
+S’il existe déjà :
+
+```powershell
+docker buildx use multiarch
+docker buildx inspect --bootstrap
+```
+
+#### 3. Préparer les tags
+
+Depuis la racine du projet, après avoir commité les modifications :
+
+```powershell
+$version = "1.0.0"
+$minor = "1.0"
+$sha = git rev-parse --short HEAD
+```
+
+Pour une nouvelle livraison, adapter les numéros de version.
+
+#### 4. Construire et publier les images
+
+Backend :
+
+```powershell
+docker buildx build --platform linux/amd64,linux/arm64 --target production --label "org.opencontainers.image.source=[https://github.com/Kiting7/docker](https://github.com/Kiting7/docker)" -t "ghcr.io/kiting7/docker-backend:$version" -t "ghcr.io/kiting7/docker-backend:$minor" -t "ghcr.io/kiting7/docker-backend:latest" -t "ghcr.io/kiting7/docker-backend:sha-$sha" --push ./backend
+```
+
+Frontend :
+
+```powershell
+docker buildx build --platform linux/amd64,linux/arm64 --target production --label "org.opencontainers.image.source=[https://github.com/Kiting7/docker](https://github.com/Kiting7/docker)" -t "ghcr.io/kiting7/docker-frontend:$version" -t "ghcr.io/kiting7/docker-frontend:$minor" -t "ghcr.io/kiting7/docker-frontend:latest" -t "ghcr.io/kiting7/docker-frontend:sha-$sha" --push ./frontend
+```
+
+L’option `--push` publie directement les images sur GHCR.
+
+Ces commandes ciblent les architectures `linux/amd64` et `linux/arm64`. Leur réussite valide la construction pour ces architectures, mais ne remplace pas un test d’exécution sur chacune.
+
+Les commandes nécessitent les droits de publication sur le compte `Kiting7`. Pour publier depuis un autre compte, remplacer le namespace `kiting7`.
+
+#### 5. Vérifier la publication
+
+```powershell
+docker buildx imagetools inspect ghcr.io/kiting7/docker-backend:1.0.0
+docker buildx imagetools inspect ghcr.io/kiting7/docker-frontend:1.0.0
+```
+
+Vérifier la présence des plateformes :
+
+```text
+linux/amd64
+linux/arm64
+```
+
+Les images sont également visibles dans l’onglet `Packages` du compte GitHub.
+
+Vérifier leur visibilité : un dépôt GitHub public ne rend pas automatiquement ses packages publics. Les packages publics peuvent être téléchargés sans authentification.
+
+### Démarrer l’application depuis GHCR
+
+Avant le premier lancement, préparer le fichier `.env` et le secret PostgreSQL comme expliqué dans la section d’installation.
+
+Dans le fichier `.env` à la racine, utiliser :
+
+```dotenv
+IMAGE_PREFIX=ghcr.io/kiting7/docker
+APP_VERSION=1.0.0
+HTTP_PORT=8081
+```
+
+Conserver les autres variables nécessaires, notamment `POSTGRES_DB` et `POSTGRES_USER`.
+
+Depuis la racine du projet, télécharger les images :
+
+```powershell
+docker compose -f compose.yaml -f compose.prod.yaml pull
+```
+
+Démarrer sans reconstruire :
+
+```powershell
+docker compose -f compose.yaml -f compose.prod.yaml up -d --no-build
+```
+
+Vérifier les conteneurs :
+
+```powershell
+docker compose -f compose.yaml -f compose.prod.yaml ps
+```
+
+Une fois les trois services `healthy`, ouvrir :
+
+http://127.0.0.1:8081
+
+Tester l’API :
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8081/api/health
+Invoke-RestMethod http://127.0.0.1:8081/api/instruction
+```
+
+La route `/api/health` doit répondre :
+
+```json
+{
+  "status": "ok",
+  "database": "up"
+}
+```
+
+### Arrêter l’application
+
+```powershell
+docker compose -f compose.yaml -f compose.prod.yaml down
+```
+
+Cette commande conserve le volume PostgreSQL. Ne pas ajouter `-v` sauf pour supprimer volontairement les données.
