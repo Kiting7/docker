@@ -36,7 +36,7 @@ Docker Compose 2.24.4 ou supérieur est nécessaire pour la syntaxe `!override`.
 ## 2. Télécharger le projet
 
 ```powershell
-git clone [https://github.com/Kiting7/docker.git](https://github.com/Kiting7/docker.git)
+git clone https://github.com/Kiting7/docker.git
 cd docker
 ```
 
@@ -59,7 +59,7 @@ POSTGRES_DB=evaluation
 POSTGRES_USER=postgres
 
 APP_PORT=5173
-HTTP_PORT=8080
+HTTP_PORT=8081
 
 IMAGE_PREFIX=docker-eval
 APP_VERSION=1.0.0
@@ -69,32 +69,31 @@ Les valeurs par défaut permettent de lancer le projet sans modification.
 
 ### Créer le mot de passe PostgreSQL
 
-À effectuer uniquement lors de la première installation :
+Depuis la racine du projet, exécuter ces commandes dans PowerShell.
+Cette étape est à effectuer uniquement lors de la première installation.
 
 ```powershell
-New-Item -ItemType Directory -Force secrets | Out-Null
+$secretPath = Join-Path (Get-Location).Path "secrets\db_password.txt"
+
+New-Item -ItemType Directory -Path ".\secrets" -Force | Out-Null
 
 $password = [guid]::NewGuid().ToString("N")
-Set-Content -Encoding ascii -NoNewline secrets/db_password.txt $password
+
+Set-Content -LiteralPath $secretPath -Value $password -Encoding ascii -NoNewline -ErrorAction Stop
+
 Remove-Variable password
 ```
 
-Vérifier que le fichier existe et n’est pas vide :
+Vérifier le fichier sans afficher le mot de passe :
 
 ```powershell
-Get-Item secrets/db_password.txt |
-    Select-Object Name, PSIsContainer, Length
+Get-Item -LiteralPath $secretPath |
+    Select-Object FullName, PSIsContainer, Length
 ```
 
-Résultat attendu :
+Le résultat attendu est `PSIsContainer = False` et `Length = 32`.
 
-- `PSIsContainer` : `False` ;
-- `Length` : supérieur à `0`.
-
-Ne pas recréer ce mot de passe après l’initialisation de la base : modifier le fichier ne change pas automatiquement le mot de passe déjà enregistré dans PostgreSQL.
-
-Le fichier `secrets/db_password.txt.example` sert uniquement de modèle et ne contient aucun vrai secret.
-
+Ne pas régénérer ce secret après l’initialisation de la base.
 ## 4. Démarrer en développement
 
 ```powershell
